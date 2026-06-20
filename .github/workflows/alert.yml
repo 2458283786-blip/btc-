@@ -23,7 +23,6 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run alert bot
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python alert_bot.py
+      env:
+        SERVERCHAN_SENDKEY: ${{ secrets.SERVERCHAN_SENDKEY }}
+      run: python alert_bot.py
