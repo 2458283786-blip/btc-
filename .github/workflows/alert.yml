@@ -23,6 +23,6 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run alert bot
-      env:
-        SERVERCHAN_SENDKEY: ${{ secrets.SERVERCHAN_SENDKEY }}
-      run: python alert_bot.py
+        env:
+          SERVERCHAN_SENDKEY: ${{ secrets.SERVERCHAN_SENDKEY }}
+        run: python alert_bot.py
