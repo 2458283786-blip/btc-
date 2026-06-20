@@ -7,6 +7,30 @@
     {
       "name": "ETHUSDT",
       "okx_inst_id": "ETH-USDT-SWAP"
+    },
+    {
+      "name": "SOLUSDT",
+      "okx_inst_id": "SOL-USDT-SWAP"
+    },
+    {
+      "name": "SUIUSDT",
+      "okx_inst_id": "SUI-USDT-SWAP"
+    },
+    {
+      "name": "DOGEUSDT",
+      "okx_inst_id": "DOGE-USDT-SWAP"
+    },
+    {
+      "name": "LINKUSDT",
+      "okx_inst_id": "LINK-USDT-SWAP"
+    },
+    {
+      "name": "AVAXUSDT",
+      "okx_inst_id": "AVAX-USDT-SWAP"
+    },
+    {
+      "name": "BNBUSDT",
+      "okx_inst_id": "BNB-USDT-SWAP"
     }
   ],
   "score_thresholds": {
@@ -15,15 +39,19 @@
     "extreme": 100
   },
   "strategy": {
+    "h1_ema_fast": 21,
+    "h1_ema_mid": 55,
+    "h1_ema_slow": 144,
     "daily_ema_fast": 55,
     "daily_ema_slow": 144,
-    "h1_ema_fast": 21,
-    "h1_ema_slow": 55,
     "adx_period": 14,
+    "adx_threshold": 25,
+    "di_gap_threshold": 10,
     "volume_window": 20,
+    "volume_ratio_threshold": 1.1,
     "boll_window": 20,
     "boll_std": 2.0,
-    "adx_threshold": 28,
-    "volume_ratio_threshold": 1.1
+    "breakout_days": 20,
+    "pullback_distance_pct": 0.012
   }
 }

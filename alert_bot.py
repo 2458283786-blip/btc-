@@ -26,7 +26,6 @@ def fetch_okx_candles(inst_id, bar, limit=300):
     data = js.get("data", [])
     if not data:
         raise RuntimeError(f"No candle data for {inst_id} {bar}")
-
     rows = []
     for x in data:
         rows.append({
@@ -37,13 +36,12 @@ def fetch_okx_candles(inst_id, bar, limit=300):
             "close": float(x[4]),
             "volume": float(x[5]),
         })
-
     return pd.DataFrame(rows).sort_values("timestamp").reset_index(drop=True)
 
 
-def add_ema(df, spans):
+def add_ema(df, mapping):
     out = df.copy()
-    for name, span in spans.items():
+    for name, span in mapping.items():
         out[name] = out["close"].ewm(span=span, adjust=False).mean()
     return out
 
@@ -51,24 +49,15 @@ def add_ema(df, spans):
 def add_adx_di(df, period=14):
     out = df.copy()
     high, low, close = out["high"], out["low"], out["close"]
-
     up_move = high.diff()
     down_move = -low.diff()
-
     plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0.0)
     minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0.0)
-
-    tr = pd.concat([
-        high - low,
-        (high - close.shift()).abs(),
-        (low - close.shift()).abs()
-    ], axis=1).max(axis=1)
-
+    tr = pd.concat([high - low, (high - close.shift()).abs(), (low - close.shift()).abs()], axis=1).max(axis=1)
     atr = tr.ewm(alpha=1 / period, adjust=False).mean()
     plus_di = 100 * pd.Series(plus_dm, index=out.index).ewm(alpha=1 / period, adjust=False).mean() / atr
     minus_di = 100 * pd.Series(minus_dm, index=out.index).ewm(alpha=1 / period, adjust=False).mean() / atr
     dx = 100 * (plus_di - minus_di).abs() / (plus_di + minus_di)
-
     out["plus_di"] = plus_di
     out["minus_di"] = minus_di
     out["adx"] = dx.ewm(alpha=1 / period, adjust=False).mean()
@@ -78,58 +67,15 @@ def add_adx_di(df, period=14):
 def add_boll_volume(df, cfg):
     out = df.copy()
     s = cfg["strategy"]
-
-    w = s["boll_window"]
-    mid = out["close"].rolling(w).mean()
-    std = out["close"].rolling(w).std()
-    out["boll_mid"] = mid
+    mid = out["close"].rolling(s["boll_window"]).mean()
+    std = out["close"].rolling(s["boll_window"]).std()
     out["boll_upper"] = mid + s["boll_std"] * std
     out["boll_lower"] = mid - s["boll_std"] * std
-    out["boll_width"] = (out["boll_upper"] - out["boll_lower"]) / out["boll_mid"]
+    out["boll_width"] = (out["boll_upper"] - out["boll_lower"]) / mid
     out["boll_width_change_24h"] = out["boll_width"] / out["boll_width"].shift(24) - 1
-
-    vw = s["volume_window"]
-    out["vol_ma"] = out["volume"].rolling(vw).mean()
+    out["vol_ma"] = out["volume"].rolling(s["volume_window"]).mean()
     out["vol_ratio"] = out["volume"] / out["vol_ma"]
     return out
-
-
-def score_direction(direction, d, h4, h1, cfg):
-    s = cfg["strategy"]
-    score = 0
-    details = []
-
-    if direction == "LONG":
-        daily_ok = d["ema55"] > d["ema144"]
-        ema_ok = h1["ema21"] > h1["ema55"]
-        di_ok = h1["plus_di"] > h1["minus_di"]
-        side_text = "做多观察"
-    else:
-        daily_ok = d["ema55"] < d["ema144"]
-        ema_ok = h1["ema21"] < h1["ema55"]
-        di_ok = h1["minus_di"] > h1["plus_di"]
-        side_text = "做空观察"
-
-    if di_ok:
-        score += 30
-        details.append("DI同向 +30")
-    if ema_ok:
-        score += 25
-        details.append("1H EMA21/55同向 +25")
-    if daily_ok:
-        score += 20
-        details.append("日线 EMA55/144同向 +20")
-    if h4["adx"] > s["adx_threshold"]:
-        score += 15
-        details.append(f"4H ADX>{s['adx_threshold']} +15")
-    if not pd.isna(h1["boll_width_change_24h"]) and h1["boll_width_change_24h"] > 0:
-        score += 5
-        details.append("BOLL扩张 +5")
-    if not pd.isna(h1["vol_ratio"]) and h1["vol_ratio"] > s["volume_ratio_threshold"]:
-        score += 5
-        details.append(f"成交量>{s['volume_ratio_threshold']}倍 +5")
-
-    return score, details, side_text
 
 
 def score_symbol(symbol_cfg, cfg):
@@ -141,9 +87,9 @@ def score_symbol(symbol_cfg, cfg):
     h4 = fetch_okx_candles(inst, "4H", 300)
     h1 = fetch_okx_candles(inst, "1H", 300)
 
-    d1 = add_ema(d1, {"ema55": s["daily_ema_fast"], "ema144": s["daily_ema_slow"]})
+    d1 = add_ema(d1, {"d_ema55": s["daily_ema_fast"], "d_ema144": s["daily_ema_slow"]})
     h4 = add_adx_di(h4, s["adx_period"])
-    h1 = add_ema(h1, {"ema21": s["h1_ema_fast"], "ema55": s["h1_ema_slow"]})
+    h1 = add_ema(h1, {"ema21": s["h1_ema_fast"], "ema55": s["h1_ema_mid"], "ema144": s["h1_ema_slow"]})
     h1 = add_adx_di(h1, s["adx_period"])
     h1 = add_boll_volume(h1, cfg)
 
@@ -151,24 +97,68 @@ def score_symbol(symbol_cfg, cfg):
     f = h4.iloc[-1]
     r = h1.iloc[-1]
 
+    high_20d = float(d1["high"].shift(1).tail(s["breakout_days"]).max())
+    low_20d = float(d1["low"].shift(1).tail(s["breakout_days"]).min())
+
     candidates = []
     for direction in ["LONG", "SHORT"]:
-        score, details, side_text = score_direction(direction, d, f, r, cfg)
+        score = 0
+        details = []
+
+        if direction == "LONG":
+            side_text = "做多观察"
+            daily_ok = d["d_ema55"] > d["d_ema144"]
+            ema_full = r["ema21"] > r["ema55"] > r["ema144"]
+            di_gap = r["plus_di"] - r["minus_di"]
+            di_ok = di_gap > s["di_gap_threshold"]
+            breakout = r["close"] > high_20d
+            pullback_zone = r["ema21"] * (1 - s["pullback_distance_pct"])
+            invalid_price = r["ema55"]
+            target1 = r["close"] * 1.05
+            target2 = r["close"] * 1.10
+        else:
+            side_text = "做空观察"
+            daily_ok = d["d_ema55"] < d["d_ema144"]
+            ema_full = r["ema21"] < r["ema55"] < r["ema144"]
+            di_gap = r["minus_di"] - r["plus_di"]
+            di_ok = di_gap > s["di_gap_threshold"]
+            breakout = r["close"] < low_20d
+            pullback_zone = r["ema21"] * (1 + s["pullback_distance_pct"])
+            invalid_price = r["ema55"]
+            target1 = r["close"] * 0.95
+            target2 = r["close"] * 0.90
+
+        adx_ok = f["adx"] > s["adx_threshold"]
+        boll_expand = (not pd.isna(r["boll_width_change_24h"])) and r["boll_width_change_24h"] > 0
+        vol_ok = (not pd.isna(r["vol_ratio"])) and r["vol_ratio"] > s["volume_ratio_threshold"]
+
+        if ema_full:
+            score += 30; details.append("1H EMA21/55/144完整排列 +30")
+        if adx_ok:
+            score += 25; details.append(f"4H ADX>{s['adx_threshold']} +25")
+        if di_ok:
+            score += 20; details.append(f"DI差值>{s['di_gap_threshold']} +20")
+        if daily_ok:
+            score += 10; details.append("日线EMA55/144同向 +10")
+        if boll_expand:
+            score += 5; details.append("BOLL扩张 +5")
+        if vol_ok:
+            score += 5; details.append(f"成交量>{s['volume_ratio_threshold']}倍 +5")
+        if breakout:
+            score += 5; details.append("突破20日高/低点 +5")
+
         candidates.append({
-            "name": name,
-            "direction": direction,
-            "side_text": side_text,
-            "score": score,
-            "details": details,
-            "close": float(r["close"]),
-            "h4_adx": float(f["adx"]),
-            "plus_di": float(r["plus_di"]),
-            "minus_di": float(r["minus_di"]),
-            "ema21": float(r["ema21"]),
-            "ema55": float(r["ema55"]),
+            "name": name, "direction": direction, "side_text": side_text,
+            "score": score, "details": details, "close": float(r["close"]),
+            "h4_adx": float(f["adx"]), "plus_di": float(r["plus_di"]),
+            "minus_di": float(r["minus_di"]), "di_gap": float(di_gap),
+            "ema21": float(r["ema21"]), "ema55": float(r["ema55"]),
+            "ema144": float(r["ema144"]),
             "vol_ratio": None if pd.isna(r["vol_ratio"]) else float(r["vol_ratio"]),
             "boll_width_change_24h": None if pd.isna(r["boll_width_change_24h"]) else float(r["boll_width_change_24h"]),
-            "timestamp": str(r["timestamp"]),
+            "breakout": bool(breakout), "pullback_zone": float(pullback_zone),
+            "invalid_price": float(invalid_price), "target1": float(target1),
+            "target2": float(target2), "timestamp": str(r["timestamp"]),
         })
 
     return max(candidates, key=lambda x: x["score"])
@@ -188,6 +178,8 @@ def level(score, cfg):
 def format_message(result, cfg):
     vol_text = "NA" if result["vol_ratio"] is None else f"{result['vol_ratio']:.2f}x"
     bw_text = "NA" if result["boll_width_change_24h"] is None else f"{result['boll_width_change_24h']*100:.2f}%"
+    breakout_text = "是" if result["breakout"] else "否"
+    detail_text = "\n".join("- " + d for d in result["details"]) if result["details"] else "- 无"
 
     return f"""
 {level(result['score'], cfg)} | {result['name']} | {result['side_text']}
@@ -199,56 +191,46 @@ def format_message(result, cfg):
 - 4H ADX：{result['h4_adx']:.2f}
 - 1H +DI：{result['plus_di']:.2f}
 - 1H -DI：{result['minus_di']:.2f}
+- DI差值：{result['di_gap']:.2f}
 - 1H EMA21：{result['ema21']:.4f}
 - 1H EMA55：{result['ema55']:.4f}
+- 1H EMA144：{result['ema144']:.4f}
 - 成交量倍率：{vol_text}
 - BOLL宽度24H变化：{bw_text}
+- 20日突破：{breakout_text}
 
 得分明细：
-{chr(10).join('- ' + d for d in result['details'])}
+{detail_text}
 
-交易提醒：
-- 80分：观察
-- 90分：等回踩/反抽 EMA21
-- 100分：重点盯盘，必须止损
-- 参考止损：0.8%
-- 目标：5%-10%单边波段
+交易计划：
+- 方向：{result['side_text']}
+- 建议：等回踩/反抽 EMA21 后再考虑
+- 参考回踩区：{result['pullback_zone']:.4f}
+- 失效参考：{result['invalid_price']:.4f}
+- 第一目标：{result['target1']:.4f}
+- 第二目标：{result['target2']:.4f}
+- 建议止损：0.8%-1.2%
+- 目标行情：5%-10%单边波段
 
 时间：{result['timestamp']}
 """.strip()
 
 
-def send_telegram(text):
-    import os
-    import requests
-
+def send_serverchan(text, title="趋势预警"):
     sendkey = os.getenv("SERVERCHAN_SENDKEY", "").strip()
-
     if not sendkey:
         print("[SERVERCHAN_SENDKEY 未配置]")
         print(text)
         return
+    url = f"https://sctapi.ftqq.com/{sendkey}.send"
+    r = requests.post(url, data={"title": title, "desp": text}, timeout=20)
+    print("Server酱发送成功")
+    print(r.text)
 
-    try:
-        r = requests.post(
-            f"https://sctapi.ftqq.com/{sendkey}.send",
-            data={
-                "title": "BTC/ETH 趋势预警",
-                "desp": text
-            },
-            timeout=20
-        )
-
-        print("Server酱发送成功")
-        print(r.text)
-
-    except Exception as e:
-        print("Server酱发送失败")
-        print(e)
 
 def main():
     cfg = load_config()
-    print(f"Checking trend alerts at {datetime.now(timezone.utc).isoformat()}")
+    print(f"Checking trend hunter V2 at {datetime.now(timezone.utc).isoformat()}")
 
     results = []
     for sym in cfg["symbols"]:
@@ -260,7 +242,6 @@ def main():
             print(f"Failed {sym['name']}: {e}")
 
     alerts = [r for r in results if r["score"] >= cfg["score_thresholds"]["watch"]]
-
     if not alerts:
         print("No alerts above threshold.")
         print("\n".join([f"{r['name']} {r['direction']} {r['score']}/100" for r in results]))
@@ -269,7 +250,7 @@ def main():
     for r in sorted(alerts, key=lambda x: x["score"], reverse=True):
         msg = format_message(r, cfg)
         print(msg)
-        send_telegram(msg)
+        send_serverchan(msg, f"{r['name']} {level(r['score'], cfg)}")
 
 
 if __name__ == "__main__":
