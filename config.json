@@ -1,0 +1,29 @@
+{
+  "symbols": [
+    {
+      "name": "BTCUSDT",
+      "okx_inst_id": "BTC-USDT-SWAP"
+    },
+    {
+      "name": "ETHUSDT",
+      "okx_inst_id": "ETH-USDT-SWAP"
+    }
+  ],
+  "score_thresholds": {
+    "watch": 80,
+    "strong": 90,
+    "extreme": 100
+  },
+  "strategy": {
+    "daily_ema_fast": 55,
+    "daily_ema_slow": 144,
+    "h1_ema_fast": 21,
+    "h1_ema_slow": 55,
+    "adx_period": 14,
+    "volume_window": 20,
+    "boll_window": 20,
+    "boll_std": 2.0,
+    "adx_threshold": 28,
+    "volume_ratio_threshold": 1.1
+  }
+}
