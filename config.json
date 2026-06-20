@@ -10,9 +10,9 @@
     }
   ],
   "score_thresholds": {
-    "watch": 40,
-    "strong": 60,
-    "extreme": 80
+    "watch": 80,
+    "strong": 90,
+    "extreme": 100
   },
   "strategy": {
     "daily_ema_fast": 55,
