@@ -219,19 +219,32 @@ def format_message(result, cfg):
 
 
 def send_telegram(text):
-    token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
-    chat_id = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+    import os
+    import requests
 
-    if not token or not chat_id:
-        print("[Telegram Secrets 未配置]")
+    sendkey = os.getenv("SERVERCHAN_SENDKEY", "").strip()
+
+    if not sendkey:
+        print("[SERVERCHAN_SENDKEY 未配置]")
         print(text)
         return
 
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
-    r = requests.post(url, data={"chat_id": chat_id, "text": text}, timeout=20)
-    if r.status_code != 200:
-        raise RuntimeError(f"Telegram send failed: {r.text}")
+    try:
+        r = requests.post(
+            f"https://sctapi.ftqq.com/{sendkey}.send",
+            data={
+                "title": "BTC/ETH 趋势预警",
+                "desp": text
+            },
+            timeout=20
+        )
 
+        print("Server酱发送成功")
+        print(r.text)
+
+    except Exception as e:
+        print("Server酱发送失败")
+        print(e)
 
 def main():
     cfg = load_config()
