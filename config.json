@@ -38,6 +38,18 @@
     "strong": 90,
     "extreme": 100
   },
+  "alerting": {
+    "state_file": "alert_state.json",
+    "dedupe_cooldown_hours": 12
+  },
+  "signal_filters": {
+    "small_score": 85,
+    "major_score": 90,
+    "small_max_extension_pct": 0.03,
+    "major_max_extension_pct": 0.04,
+    "ema_gap_pct": 0.0015,
+    "breakout_buffer_pct": 0.002
+  },
   "strategy": {
     "h1_ema_fast": 21,
     "h1_ema_mid": 55,
